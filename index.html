@@ -1,1 +1,193 @@
+<!DOCTYPE html>
+<html lang="uz"><head><meta charset="UTF-8">
 
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security Toolkit</title>
+<style>
+:root{--bg:#e9eef3;--panel:#fff;--ink:#10243a;--mute:#5a6b7d;--line:#cbd5df;--acc:#0e7c86;--bad:#b3261e;--warn:#b26a00;--ok:#1b7f4b}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1b29;--panel:#17283a;--ink:#e6edf4;--mute:#9db0c3;--line:#2c4157;--acc:#45c1cb;--bad:#ff8a80;--warn:#ffc266;--ok:#6fdc9f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Segoe UI",system-ui,sans-serif}
+header,main,footer{max-width:760px;margin:0 auto;padding:0 20px}
+header{padding-top:40px;padding-bottom:12px}
+h1{font-size:2rem;margin:0 0 6px;letter-spacing:-.02em}
+header p{margin:0;color:var(--mute);max-width:56ch}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px;margin:22px 0}
+h2{font-size:1.2rem;margin:0 0 4px}
+.hint{color:var(--mute);font-size:.92rem;margin:0 0 14px}
+label{display:block;font-weight:600;margin-bottom:6px}
+input[type=text],input[type=password]{width:100%;padding:11px 12px;font-size:1rem;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:6px}
+input:focus,button:focus-visible{outline:3px solid var(--acc);outline-offset:1px}
+.row{display:flex;gap:10px}
+button{padding:11px 16px;font-size:1rem;font-weight:600;color:#fff;background:var(--acc);border:0;border-radius:6px;cursor:pointer}
+@media (prefers-color-scheme:dark){button{color:#08202a}}
+.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.meter{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin:14px 0 8px}
+.meter i{height:9px;border-radius:2px;background:var(--line)}
+.verdict{font-weight:700;font-size:1.1rem}
+ul{padding-left:20px;margin:8px 0 0}
+li{margin:3px 0}
+.stat{color:var(--mute);font-size:.92rem}
+.lvl-0{color:var(--bad)}.lvl-1{color:var(--bad)}.lvl-2{color:var(--warn)}.lvl-3{color:var(--ok)}.lvl-4{color:var(--ok)}
+footer{padding-bottom:40px;color:var(--mute);font-size:.88rem}
+.lang{position:absolute;top:16px;right:20px;display:flex;gap:6px}
+.lang button{padding:6px 12px;font-size:.88rem;background:transparent;color:var(--ink);border:1px solid var(--line)}
+.lang button[aria-pressed=true]{background:var(--acc);color:#fff;border-color:var(--acc)}
+@media (prefers-color-scheme:dark){.lang button[aria-pressed=true]{color:#08202a}}
+body{position:relative}
+</style>
+</head>
+<body>
+<div class="lang" role="group" aria-label="Language">
+<button type="button" id="l-en" aria-pressed="true">EN</button>
+<button type="button" id="l-uz" aria-pressed="false">UZ</button>
+</div>
+<header>
+<h1>Security Toolkit</h1>
+<p data-i="sub">Check password strength and suspicious links. Everything runs in your browser: nothing you type is sent anywhere.</p>
+</header>
+<main>
+
+<section aria-labelledby="h-pass">
+<h2 id="h-pass" data-i="passTitle">Password strength checker</h2>
+<p class="hint" data-i="passHint">Type a sample similar to your password, not your real one.</p>
+<label for="pw" data-i="passLabel">Password</label>
+<div class="row">
+<input id="pw" type="password" autocomplete="off" spellcheck="false">
+<button class="ghost" id="toggle" type="button" aria-pressed="false">Show</button>
+</div>
+<div class="meter" id="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+<div class="verdict" id="pv" aria-live="polite">Enter a password</div>
+<div class="stat" id="pstat"></div>
+<ul id="ptips"></ul>
+</section>
+
+<section aria-labelledby="h-url">
+<h2 id="h-url" data-i="urlTitle">Link checker (phishing)</h2>
+<p class="hint" data-i="urlHint">Paste a link here before clicking it. The site never visits the link, it only analyses how it is written.</p>
+<label for="url" data-i="urlLabel">Link</label>
+<div class="row">
+<input id="url" type="text" placeholder="http://paypa1-login.example.com/verify" autocomplete="off" spellcheck="false">
+<button id="check" type="button" data-i="urlBtn">Check</button>
+</div>
+<div class="verdict" id="uv" aria-live="polite" style="margin-top:14px"></div>
+<ul id="uflags"></ul>
+</section>
+
+<section>
+<h2 data-i="howTitle">How it works</h2>
+<ul>
+<li data-i="how1">Password: entropy is estimated from length and character variety; common passwords and simple sequences are penalised.</li>
+<li data-i="how2" data-html="">Link: the address is split into parts and red flags (IP address, <code>@</code>, look-alike brand names, URL shorteners and more) are scored.</li>
+</ul>
+</section>
+</main>
+<footer data-i="foot">Educational project. Results are approximate: a "Low risk" result does not mean a link is safe. For important accounts, use a password manager and two-factor authentication.</footer>
+
+<script>
+"use strict";
+/* ---------- Translations ---------- */
+const T = {
+en: {
+  sub: "Check password strength and suspicious links. Everything runs in your browser: nothing you type is sent anywhere.",
+  passTitle: "Password strength checker",
+  passHint: "Type a sample similar to your password, not your real one.",
+  passLabel: "Password",
+  show: "Show", hide: "Hide",
+  urlTitle: "Link checker (phishing)",
+  urlHint: "Paste a link here before clicking it. The site never visits the link, it only analyses how it is written.",
+  urlLabel: "Link", urlBtn: "Check",
+  howTitle: "How it works",
+  how1: "Password: entropy is estimated from length and character variety; common passwords and simple sequences are penalised.",
+  how2: "Link: the address is split into parts and red flags (IP address, <code>@</code>, look-alike brand names, URL shorteners and more) are scored.",
+  foot: "Educational project. Results are approximate: a \"Low risk\" result does not mean a link is safe. For important accounts, use a password manager and two-factor authentication.",
+  levels: ["Very weak","Weak","Fair","Strong","Very strong"],
+  enter: "Enter a password",
+  entropy: (b, t) => "Entropy: " + b + " bits. Time to crack at a fast attack (10 billion guesses/second): " + t + ".",
+  instant: "instantly", forever: "more than a million years",
+  units: {year:"years", day:"days", hour:"hours", minute:"minutes", second:"seconds"},
+  common: "This is a very common password. Attackers try these first.",
+  tLen: "Use at least 12 characters. Length matters most.",
+  tCase: "Mix uppercase and lowercase letters.",
+  tNum: "Add a digit.",
+  tSym: "Add a symbol (for example ! # % _).",
+  tRep: "Avoid repeating the same character (aaa, 111).",
+  tSeq: "Avoid simple sequences (abc, 123, qwe).",
+  tWord: "A word followed by digits is easy to guess (Ali2024!).",
+  tGood: "Good. Use a different password for every site.",
+  enterUrl: "Enter a link.",
+  badUrl: "The link is not written correctly. Check it and try again.",
+  high: "High risk: do not click", mid: "Medium risk: be careful", low: "Low risk", pts: "points",
+  noFlags: "No clear red flags found. Still make sure you trust the source.",
+  fHttp: "The link is not HTTPS (unencrypted connection).",
+  fIp: "An IP address is used instead of a domain name.",
+  fAt: "The link contains @: the real address comes after the @.",
+  fPuny: "The domain uses punycode (xn--): look-alike characters may be used to deceive.",
+  fSub: "Too many subdomains.",
+  fLong: "The link is very long.",
+  fDash: "The domain has many hyphens.",
+  fTld: t => "The domain ending (." + t + ") is often abused.",
+  fShort: "Shortened link: the real destination is hidden.",
+  fPort: "An unusual port is used.",
+  fWords: w => "Suspicious words: " + w + ".",
+  fBrand: (b, o) => "The domain imitates the \"" + b + "\" brand but is not the official site (" + o + ")."
+},
+uz: {
+  sub: "Parol kuchini va shubhali havolalarni tekshiring. Hamma narsa sizning brauzeringizda ishlaydi: kiritgan ma'lumotingiz hech qayerga yuborilmaydi.",
+  passTitle: "Parol kuchini tekshirish",
+  passHint: "Haqiqiy parolingizni emas, o'xshash namuna yozib ko'ring.",
+  passLabel: "Parol",
+  show: "Ko'rsat", hide: "Yashir",
+  urlTitle: "Havolani tekshirish (phishing)",
+  urlHint: "Havolani bosmasdan oldin shu yerga qo'ying. Sayt havolaga kirmaydi, faqat uning yozilishini tahlil qiladi.",
+  urlLabel: "Havola", urlBtn: "Tekshir",
+  howTitle: "Qanday ishlaydi",
+  how1: "Parol: uzunlik va belgilar turiga qarab taxminiy entropiya hisoblanadi, keng tarqalgan parollar va oddiy ketma-ketliklar jazolanadi.",
+  how2: "Havola: manzil qismlarga ajratiladi va xavf belgilari (IP manzil, <code>@</code>, o'xshash brend nomi, qisqartirilgan havola va boshqalar) ball bilan baholanadi.",
+  foot: "Bu o'quv loyihasi. Natijalar taxminiy: \"Past xavf\" havola xavfsiz degani emas. Muhim akkauntlar uchun parol menejeri va ikki bosqichli tasdiqlashdan foydalaning.",
+  levels: ["Juda zaif","Zaif","O'rtacha","Kuchli","Juda kuchli"],
+  enter: "Parol yozing",
+  entropy: (b, t) => "Entropiya: " + b + " bit. Tez hujumda (sekundiga 10 mlrd taxmin) topilish vaqti: " + t + ".",
+  instant: "bir zumda", forever: "million yildan ko'p",
+  units: {year:"yil", day:"kun", hour:"soat", minute:"daqiqa", second:"soniya"},
+  common: "Bu juda keng tarqalgan parol. Hujumchilar birinchi shuni sinaydi.",
+  tLen: "Kamida 12 ta belgi ishlating. Uzunlik eng muhim omil.",
+  tCase: "Katta va kichik harflarni aralashtiring.",
+  tNum: "Raqam qo'shing.",
+  tSym: "Belgi qo'shing (masalan ! # % _).",
+  tRep: "Bir xil belgini ketma-ket takrorlamang (aaa, 111).",
+  tSeq: "Oddiy ketma-ketlikdan qoching (abc, 123, qwe).",
+  tWord: "So'z + raqam shakli juda taxmin qilinadi (Ali2024!).",
+  tGood: "Yaxshi. Har bir sayt uchun alohida parol ishlating.",
+  enterUrl: "Havolani kiriting.",
+  badUrl: "Havola noto'g'ri yozilgan. Tekshirib qayta kiriting.",
+  high: "Yuqori xavf: bosmang", mid: "O'rtacha xavf: ehtiyot bo'ling", low: "Past xavf", pts: "ball",
+  noFlags: "Aniq xavf belgilari topilmadi. Baribir manba ishonchli ekaniga ishonch hosil qiling.",
+  fHttp: "Havola HTTPS emas (shifrlanmagan ulanish).",
+  fIp: "Domen o'rniga IP manzil ishlatilgan.",
+  fAt: "Havolada @ belgisi bor: haqiqiy manzil @ dan keyin turadi.",
+  fPuny: "Domen punycode (xn--) ko'rinishida: o'xshash harflar bilan aldov bo'lishi mumkin.",
+  fSub: "Subdomenlar juda ko'p.",
+  fLong: "Havola juda uzun.",
+  fDash: "Domenda chiziqchalar ko'p.",
+  fTld: t => "Domen zonasi (." + t + ") ko'p suiste'mol qilinadi.",
+  fShort: "Qisqartirilgan havola: asl manzil yashirin.",
+  fPort: "G'ayrioddiy port ishlatilgan.",
+  fWords: w => "Shubhali so'zlar: " + w + ".",
+  fBrand: (b, o) => "Domen \"" + b + "\" brendiga o'xshaydi, lekin rasmiy sayt (" + o + ") emas."
+}
+};
+let lang = "uz";
+try { const s = localStorage.getItem("lang"); if (s === "uz" || s === "en") lang = s; } catch (e) {}
+const t = () => T[lang];
+
+/* ---------- Password ---------- */
+const COMMON = ["password","123456","12345678","123456789","qwerty","111111","123123","admin","letmein","welcome","iloveyou","parol","uzbekistan","toshkent","samarqand","abc123","000000","qwerty123","password1","1q2w3e4r","987654321"];
+const SEQ = ["abcdefghijklmnopqrstuvwxyz","0123456789","qwertyuiop","asdfghjkl","zxcvbnm"];
+const COLORS = ["var(--bad)","var(--bad)","var(--warn)","var(--ok)","var(--ok)"];
+
+function hasSequence(p){
+  const s = p.toLowerCase();
+  for (const seq of SEQ){
+    for (let i=0;i<=seq.length-3;i++){
+      const part
