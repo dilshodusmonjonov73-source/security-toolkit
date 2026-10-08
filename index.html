@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security Toolkit</title>
+<style>
+:root{--bg:#e9eef3;--panel:#fff;--ink:#10243a;--mute:#5a6b7d;--line:#cbd5df;--acc:#0e7c86;--bad:#b3261e;--warn:#b26a00;--ok:#1b7f4b}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1b29;--panel:#17283a;--ink:#e6edf4;--mute:#9db0c3;--line:#2c4157;--acc:#45c1cb;--bad:#ff8a80;--warn:#ffc266;--ok:#6fdc9f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Segoe UI",system-ui,sans-serif}
+header,main,footer{max-width:760px;margin:0 auto;padding:0 20px}
+header{padding-top:40px;padding-bottom:12px}
+h1{font-size:2rem;margin:0 0 6px;letter-spacing:-.02em}
+header p{margin:0;color:var(--mute);max-width:56ch}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px;margin:22px 0}
+h2{font-size:1.2rem;margin:0 0 4px}
+.hint{color:var(--mute);font-size:.92rem;margin:0 0 14px}
+label{display:block;font-weight:600;margin-bottom:6px}
+input[type=text],input[type=password]{width:100%;padding:11px 12px;font-size:1rem;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:6px}
+input:focus,button:focus-visible{outline:3px solid var(--acc);outline-offset:1px}
+.row{display:flex;gap:10px}
+button{padding:11px 16px;font-size:1rem;font-weight:600;color:#fff;background:var(--acc);border:0;border-radius:6px;cursor:pointer}
+@media (prefers-color-scheme:dark){button{color:#08202a}}
+.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.meter{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin:14px 0 8px}
+.meter i{height:9px;border-radius:2px;background:var(--line)}
+.verdict{font-weight:700;font-size:1.1rem}
+ul{padding-left:20px;margin:8px 0 0}
+li{margin:3px 0}
+.stat{color:var(--mute);font-size:.92rem}
+.lvl-0{color:var(--bad)}.lvl-1{color:var(--bad)}.lvl-2{color:var(--warn)}.lvl-3{color:var(--ok)}.lvl-4{color:var(--ok)}
+footer{padding-bottom:40px;color:var(--mute);font-size:.88rem}
+</style>
+</head>
+<body>
+<header>
+<h1>Security Toolkit</h1>
+<p>Parol kuchini va shubhali havolalarni tekshiring. Hamma narsa sizning brauzeringizda ishlaydi: kiritgan ma'lumotingiz hech qayerga yuborilmaydi.</p>
+</header>
+<main>
+
+<section aria-labelledby="h-pass">
+<h2 id="h-pass">Parol kuchini tekshirish</h2>
+<p class="hint">Haqiqiy parolingizni emas, o'xshash namuna yozib ko'ring.</p>
+<label for="pw">Parol</label>
+<div class="row">
+<input id="pw" type="password" autocomplete="off" spellcheck="false">
+<button class="ghost" id="toggle" type="button" aria-pressed="false">Ko'rsat</button>
+</div>
+<div class="meter" id="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+<div class="verdict" id="pv" aria-live="polite">Parol yozing</div>
+<div class="stat" id="pstat"></div>
+<ul id="ptips"></ul>
+</section>
+
+<section aria-labelledby="h-url">
+<h2 id="h-url">Havolani tekshirish (phishing)</h2>
+<p class="hint">Havolani bosmasdan oldin shu yerga qo'ying. Sayt havolaga kirmaydi, faqat uning yozilishini tahlil qiladi.</p>
+<label for="url">Havola</label>
+<div class="row">
+<input id="url" type="text" placeholder="http://paypa1-login.example.com/verify" autocomplete="off" spellcheck="false">
+<button id="check" type="button">Tekshir</button>
+</div>
+<div class="verdict" id="uv" aria-live="polite" style="margin-top:14px"></div>
+<ul id="uflags"></ul>
+</section>
+
+<section>
+<h2>Qanday ishlaydi</h2>
+<ul>
+<li>Parol: uzunlik va belgilar turiga qarab taxminiy entropiya hisoblanadi, keng tarqalgan parollar va oddiy ketma-ketliklar jazolanadi.</li>
+<li>Havola: manzil qismlarga ajratiladi va xavf belgilari (IP manzil, <code>@</code>, o'xshash brend nomi, qisqartirilgan havola va boshqalar) ball bilan baholanadi.</li>
+</ul>
+</section>
+</main>
+<footer>Bu o'quv loyihasi. Natijalar taxminiy: "Past xavf" havola xavfsiz degani emas. Muhim akkauntlar uchun parol menejeri va ikki bosqichli tasdiqlashdan foydalaning.</footer>
+
+<script>
+"use strict";
+/* ---------- Parol ---------- */
+const COMMON = ["password","123456","12345678","123456789","qwerty","111111","123123","admin","letmein","welcome","iloveyou","parol","uzbekistan","toshkent","samarqand","abc123","000000","qwerty123","password1","1q2w3e4r","987654321"];
+const SEQ = ["abcdefghijklmnopqrstuvwxyz","0123456789","qwertyuiop","asdfghjkl","zxcvbnm"];
+const LEVELS = ["Juda zaif","Zaif","O'rtacha","Kuchli","Juda kuchli"];
+const COLORS = ["var(--bad)","var(--bad)","var(--warn)","var(--ok)","var(--ok)"];
+
+function hasSequence(p){
+  const s = p.toLowerCase();
+  for (const seq of SEQ){
+    for (let i=0;i<=seq.length-3;i++){
+      const part = seq.slice(i,i+3);
+      if (s.includes(part) || s.includes([...part].reverse().join(""))) return true;
+    }
+  }
+  return false;
+}
+function fmtTime(sec){
+  if (sec < 1) return "bir zumda";
+  const u = [["yil",31557600],["kun",86400],["soat",3600],["daqiqa",60],["soniya",1]];
+  if (sec > 31557600*1e6) return "million yildan ko'p";
+  for (const [n,v] of u) if (sec >= v) return Math.round(sec/v).toLocaleString("uz") + " " + n;
+  return "bir zumda";
+}
+function analyze(p){
+  const tips = [];
+  let pool = 0;
+  if (/[a-z]/.test(p)) pool += 26;
+  if (/[A-Z]/.test(p)) pool += 26;
+  if (/[0-9]/.test(p)) pool += 10;
+  if (/[^A-Za-z0-9]/.test(p)) pool += 33;
+  let bits = p.length * Math.log2(pool || 1);
+  if (COMMON.includes(p.toLowerCase())){
+    return {bits:0, level:0, tips:["Bu juda keng tarqalgan parol. Hujumchilar birinchi shuni sinaydi."]};
+  }
+  if (p.length < 12) tips.push("Kamida 12 ta belgi ishlating. Uzunlik eng muhim omil.");
+  if (!/[A-Z]/.test(p) || !/[a-z]/.test(p)) tips.push("Katta va kichik harflarni aralashtiring.");
+  if (!/[0-9]/.test(p)) tips.push("Raqam qo'shing.");
+  if (!/[^A-Za-z0-9]/.test(p)) tips.push("Belgi qo'shing (masalan ! # % _).");
+  if (/(.)\1{2,}/.test(p)){ bits -= 12; tips.push("Bir xil belgini ketma-ket takrorlamang (aaa, 111)."); }
+  if (hasSequence(p)){ bits -= 12; tips.push("Oddiy ketma-ketlikdan qoching (abc, 123, qwe)."); }
+  if (/^[A-Za-z]+[0-9]{1,4}[!@#$%.]?$/.test(p)){ bits -= 8; tips.push("So'z + raqam shakli juda taxmin qilinadi (Ali2024!)."); }
+  bits = Math.max(0, bits);
+  const level = bits < 28 ? 0 : bits < 40 ? 1 : bits < 60 ? 2 : bits < 80 ? 3 : 4;
+  if (!tips.length) tips.push("Yaxshi. Har bir sayt uchun alohida parol ishlating.");
+  return {bits, level, tips};
+}
+const pw = document.getElementById("pw");
+pw.addEventListener("input", () => {
+  const v = pw.value, bars = document.querySelectorAll("#meter i");
+  const verdict = document.getElementById("pv"), stat = document.getElementById("pstat"), tipsEl = document.getElementById("ptips");
+  tipsEl.textContent = "";
+  if (!v){
+    bars.forEach(b => b.style.background = "");
+    verdict.textContent = "Parol yozing"; verdict.style.color = ""; stat.textContent = "";
+    return;
+  }
+  const r = analyze(v);
+  bars.forEach((b,i) => b.style.background = i <= r.level ? COLORS[r.level] : "");
+  verdict.textContent = LEVELS[r.level]; verdict.style.color = COLORS[r.level];
+  const sec = Math.pow(2, r.bits) / 1e10 / 2;
+  stat.textContent = "Entropiya: " + Math.round(r.bits) + " bit. Tez hujumda (sekundiga 10 mlrd taxmin) topilish vaqti: " + fmtTime(sec) + ".";
+  r.tips.forEach(t => { const li = document.createElement("li"); li.textContent = t; tipsEl.appendChild(li); });
+});
+const toggle = document.getElementById("toggle");
+toggle.addEventListener("click", () => {
+  const show = pw.type === "password";
+  pw.type = show ? "text" : "password";
+  toggle.textContent = show ? "Yashir" : "Ko'rsat";
+  toggle.setAttribute("aria-pressed", String(show));
+});
+
+/* ---------- Havola ---------- */
+const BRANDS = {google:"google.com",paypal:"paypal.com",apple:"apple.com",microsoft:"microsoft.com",facebook:"facebook.com",instagram:"instagram.com",telegram:"telegram.org",payme:"payme.uz",click:"click.uz",uzum:"uzum.uz",amazon:"amazon.com",netflix:"netflix.com"};
+const SHORT = ["bit.ly","tinyurl.com","t.co","goo.gl","is.gd","cutt.ly","ow.ly"];
+const BAD_TLD = ["zip","xyz","top","click","tk","gq","ml","cf","work","loan","country","support"];
+const WORDS = ["login","signin","verify","secure","update","account","confirm","password","wallet","bank"];
+const unleet = s => s.replace(/0/g,"o").replace(/1/g,"l").replace(/3/g,"e").replace(/4/g,"a").replace(/5/g,"s").replace(/\$/g,"s");
+
+function checkUrl(raw){
+  const flags = [];
+  let score = 0;
+  const add = (pts, msg) => { score += pts; flags.push(msg); };
+  let u;
+  try { u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : "http://" + raw); }
+  catch { return null; }
+  const host = u.hostname.toLowerCase();
+  const labels = host.split(".");
+  const reg = labels.slice(-2).join(".");
+  if (u.protocol === "http:") add(2, "Havola HTTPS emas (shifrlanmagan ulanish).");
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) add(3, "Domen o'rniga IP manzil ishlatilgan.");
+  if (raw.includes("@")) add(3, "Havolada @ belgisi bor: haqiqiy manzil @ dan keyin turadi.");
+  if (host.includes("xn--")) add(3, "Domen punycode (xn--) ko'rinishida: o'xshash harflar bilan aldov bo'lishi mumkin.");
+  if (labels.length >= 4) add(2, "Subdomenlar juda ko'p.");
+  if (raw.length > 75) add(1, "Havola juda uzun.");
+  if ((host.match(/-/g) || []).length >= 2) add(1, "Domenda chiziqchalar ko'p.");
+  if (BAD_TLD.includes(labels[labels.length-1])) add(2, "Domen zonasi (." + labels[labels.length-1] + ") ko'p suiste'mol qilinadi.");
+  if (SHORT.includes(reg)) add(2, "Qisqartirilgan havola: asl manzil yashirin.");
+  if (u.port && !["80","443"].includes(u.port)) add(1, "G'ayrioddiy port ishlatilgan.");
+  const hit = WORDS.filter(w => (host + u.pathname).toLowerCase().includes(w)).slice(0,2);
+  if (hit.length) add(hit.length, "Shubhali so'zlar: " + hit.join(", ") + ".");
+  const flat = unleet(host);
+  for (const [brand, official] of Object.entries(BRANDS)){
+    if (flat.includes(brand) && reg !== official){
+      add(3, "Domen \"" + brand + "\" brendiga o'xshaydi, lekin rasmiy sayt (" + official + ") emas.");
+      break;
+    }
+  }
+  return {score, flags, host};
+}
+function runCheck(){
+  const raw = document.getElementById("url").value.trim();
+  const v = document.getElementById("uv"), list = document.getElementById("uflags");
+  list.textContent = "";
+  if (!raw){ v.textContent = "Havolani kiriting."; v.style.color = ""; return; }
+  const r = checkUrl(raw);
+  if (!r){ v.textContent = "Havola noto'g'ri yozilgan. Tekshirib qayta kiriting."; v.style.color = "var(--warn)"; return; }
+  const [txt, col] = r.score >= 4 ? ["Yuqori xavf: bosmang","var(--bad)"] : r.score >= 2 ? ["O'rtacha xavf: ehtiyot bo'ling","var(--warn)"] : ["Past xavf","var(--ok)"];
+  v.textContent = txt + " (" + r.score + " ball)"; v.style.color = col;
+  const items = r.flags.length ? r.flags : ["Aniq xavf belgilari topilmadi. Baribir manba ishonchli ekaniga ishonch hosil qiling."];
+  items.forEach(t => { const li = document.createElement("li"); li.textContent = t; list.appendChild(li); });
+}
+document.getElementById("check").addEventListener("click", runCheck);
+document.getElementById("url").addEventListener("keydown", e => { if (e.key === "Enter") runCheck(); });
+</script>
+</body>
+</html>
