@@ -28,7 +28,6 @@ button{padding:11px 16px;font-size:1rem;font-weight:600;color:#fff;background:va
 ul{padding-left:20px;margin:8px 0 0}
 li{margin:3px 0}
 .stat{color:var(--mute);font-size:.92rem}
-.lvl-0{color:var(--bad)}.lvl-1{color:var(--bad)}.lvl-2{color:var(--warn)}.lvl-3{color:var(--ok)}.lvl-4{color:var(--ok)}
 footer{padding-bottom:40px;color:var(--mute);font-size:.88rem}
 .lang{position:absolute;top:16px;right:20px;display:flex;gap:6px}
 .lang button{padding:6px 12px;font-size:.88rem;background:transparent;color:var(--ink);border:1px solid var(--line)}
@@ -190,4 +189,148 @@ function hasSequence(p){
   const s = p.toLowerCase();
   for (const seq of SEQ){
     for (let i=0;i<=seq.length-3;i++){
-      const part
+      const part = seq.slice(i,i+3);
+      if (s.includes(part) || s.includes([...part].reverse().join(""))) return true;
+    }
+  }
+  return false;
+}
+function fmtTime(sec){
+  const L = t();
+  if (sec < 1) return L.instant;
+  if (sec > 31557600*1e6) return L.forever;
+  const u = [["year",31557600],["day",86400],["hour",3600],["minute",60],["second",1]];
+  for (const [n,v] of u) if (sec >= v) return Math.round(sec/v).toLocaleString(lang) + " " + L.units[n];
+  return L.instant;
+}
+function analyze(p){
+  const tips = [];
+  let pool = 0;
+  if (/[a-z]/.test(p)) pool += 26;
+  if (/[A-Z]/.test(p)) pool += 26;
+  if (/[0-9]/.test(p)) pool += 10;
+  if (/[^A-Za-z0-9]/.test(p)) pool += 33;
+  let bits = p.length * Math.log2(pool || 1);
+  if (COMMON.includes(p.toLowerCase())) return {bits:0, level:0, tips:["common"]};
+  if (p.length < 12) tips.push("tLen");
+  if (!/[A-Z]/.test(p) || !/[a-z]/.test(p)) tips.push("tCase");
+  if (!/[0-9]/.test(p)) tips.push("tNum");
+  if (!/[^A-Za-z0-9]/.test(p)) tips.push("tSym");
+  if (/(.)\1{2,}/.test(p)){ bits -= 12; tips.push("tRep"); }
+  if (hasSequence(p)){ bits -= 12; tips.push("tSeq"); }
+  if (/^[A-Za-z]+[0-9]{1,4}[!@#$%.]?$/.test(p)){ bits -= 8; tips.push("tWord"); }
+  bits = Math.max(0, bits);
+  const level = bits < 28 ? 0 : bits < 40 ? 1 : bits < 60 ? 2 : bits < 80 ? 3 : 4;
+  if (!tips.length) tips.push("tGood");
+  return {bits, level, tips};
+}
+const pw = document.getElementById("pw");
+function renderPass(){
+  const L = t();
+  const v = pw.value, bars = document.querySelectorAll("#meter i");
+  const verdict = document.getElementById("pv"), stat = document.getElementById("pstat"), tipsEl = document.getElementById("ptips");
+  tipsEl.textContent = "";
+  if (!v){
+    bars.forEach(b => b.style.background = "");
+    verdict.textContent = L.enter; verdict.style.color = ""; stat.textContent = "";
+    return;
+  }
+  const r = analyze(v);
+  bars.forEach((b,i) => b.style.background = i <= r.level ? COLORS[r.level] : "");
+  verdict.textContent = L.levels[r.level]; verdict.style.color = COLORS[r.level];
+  const sec = Math.pow(2, r.bits) / 1e10 / 2;
+  stat.textContent = L.entropy(Math.round(r.bits), fmtTime(sec));
+  r.tips.forEach(k => { const li = document.createElement("li"); li.textContent = L[k]; tipsEl.appendChild(li); });
+}
+pw.addEventListener("input", renderPass);
+const toggle = document.getElementById("toggle");
+function renderToggle(){
+  const shown = pw.type === "text";
+  toggle.textContent = shown ? t().hide : t().show;
+  toggle.setAttribute("aria-pressed", String(shown));
+}
+toggle.addEventListener("click", () => {
+  pw.type = pw.type === "password" ? "text" : "password";
+  renderToggle();
+});
+
+/* ---------- Link ---------- */
+const BRANDS = {google:"google.com",paypal:"paypal.com",apple:"apple.com",microsoft:"microsoft.com",facebook:"facebook.com",instagram:"instagram.com",telegram:"telegram.org",payme:"payme.uz",click:"click.uz",uzum:"uzum.uz",amazon:"amazon.com",netflix:"netflix.com"};
+const SHORT = ["bit.ly","tinyurl.com","t.co","goo.gl","is.gd","cutt.ly","ow.ly"];
+const BAD_TLD = ["zip","xyz","top","click","tk","gq","ml","cf","work","loan","country","support"];
+const WORDS = ["login","signin","verify","secure","update","account","confirm","password","wallet","bank"];
+const unleet = s => s.replace(/0/g,"o").replace(/1/g,"l").replace(/3/g,"e").replace(/4/g,"a").replace(/5/g,"s").replace(/\$/g,"s");
+
+function checkUrl(raw){
+  const flags = [];
+  let score = 0;
+  const add = (pts, ...f) => { score += pts; flags.push(f); };
+  let u;
+  try { u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : "http://" + raw); }
+  catch { return null; }
+  const host = u.hostname.toLowerCase();
+  const labels = host.split(".");
+  const reg = labels.slice(-2).join(".");
+  if (u.protocol === "http:") add(2, "fHttp");
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) add(3, "fIp");
+  if (raw.includes("@")) add(3, "fAt");
+  if (host.includes("xn--")) add(3, "fPuny");
+  if (labels.length >= 4) add(2, "fSub");
+  if (raw.length > 75) add(1, "fLong");
+  if ((host.match(/-/g) || []).length >= 2) add(1, "fDash");
+  if (BAD_TLD.includes(labels[labels.length-1])) add(2, "fTld", labels[labels.length-1]);
+  if (SHORT.includes(reg)) add(2, "fShort");
+  if (u.port && !["80","443"].includes(u.port)) add(1, "fPort");
+  const hit = WORDS.filter(w => (host + u.pathname).toLowerCase().includes(w)).slice(0,2);
+  if (hit.length) add(hit.length, "fWords", hit.join(", "));
+  const flat = unleet(host);
+  for (const [brand, official] of Object.entries(BRANDS)){
+    if (flat.includes(brand) && reg !== official){ add(3, "fBrand", brand, official); break; }
+  }
+  return {score, flags};
+}
+let lastUrlState = null;
+function renderUrl(){
+  const L = t();
+  const v = document.getElementById("uv"), list = document.getElementById("uflags");
+  list.textContent = "";
+  const s = lastUrlState;
+  if (!s){ v.textContent = ""; return; }
+  if (s === "empty"){ v.textContent = L.enterUrl; v.style.color = ""; return; }
+  if (s === "bad"){ v.textContent = L.badUrl; v.style.color = "var(--warn)"; return; }
+  const [txt, col] = s.score >= 4 ? [L.high,"var(--bad)"] : s.score >= 2 ? [L.mid,"var(--warn)"] : [L.low,"var(--ok)"];
+  v.textContent = txt + " (" + s.score + " " + L.pts + ")"; v.style.color = col;
+  const items = s.flags.length ? s.flags.map(([k, ...a]) => typeof L[k] === "function" ? L[k](...a) : L[k]) : [L.noFlags];
+  items.forEach(m => { const li = document.createElement("li"); li.textContent = m; list.appendChild(li); });
+}
+function runCheck(){
+  const raw = document.getElementById("url").value.trim();
+  if (!raw) lastUrlState = "empty";
+  else lastUrlState = checkUrl(raw) || "bad";
+  renderUrl();
+}
+document.getElementById("check").addEventListener("click", runCheck);
+document.getElementById("url").addEventListener("keydown", e => { if (e.key === "Enter") runCheck(); });
+
+/* ---------- Language ---------- */
+function applyLang(){
+  const L = t();
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i]").forEach(el => {
+    if (el.hasAttribute("data-html")) el.innerHTML = L[el.dataset.i]; else el.textContent = L[el.dataset.i];
+  });
+  document.getElementById("l-en").setAttribute("aria-pressed", String(lang === "en"));
+  document.getElementById("l-uz").setAttribute("aria-pressed", String(lang === "uz"));
+  renderToggle(); renderPass(); renderUrl();
+}
+function setLang(l){
+  lang = l;
+  try { localStorage.setItem("lang", l); } catch (e) {}
+  applyLang();
+}
+document.getElementById("l-en").addEventListener("click", () => setLang("en"));
+document.getElementById("l-uz").addEventListener("click", () => setLang("uz"));
+applyLang();
+</script>
+
+</body></html>
